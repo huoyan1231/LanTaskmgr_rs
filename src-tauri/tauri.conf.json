@@ -1,0 +1,42 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "LanTaskmgr_rs",
+  "version": "1.0.0",
+  "identifier": "com.lantaskmgr.rs",
+  "build": {
+    "frontendDist": "../ui",
+    "beforeBuildCommand": ""
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "手机任务管理器",
+        "width": 480,
+        "height": 620,
+        "minWidth": 420,
+        "minHeight": 560,
+        "resizable": true,
+        "visible": true,
+        "center": true,
+        "decorations": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "shortDescription": "手机任务管理器",
+    "longDescription": "在手机浏览器里查看并结束电脑上的进程"
+  }
+}

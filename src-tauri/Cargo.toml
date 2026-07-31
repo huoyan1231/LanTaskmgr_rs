@@ -1,0 +1,39 @@
+[package]
+name = "lantaskmgr_rs"
+version = "1.0.0"
+description = "在手机浏览器里查看并结束电脑上的进程"
+authors = ["huoyan1231"]
+edition = "2021"
+rust-version = "1.77"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "sync"] }
+axum = "0.8"
+sysinfo = "0.33"
+qrcode = "0.14"
+chrono = "0.4"
+local-ip-address = "0.6"
+winreg = "0.52"
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "=0.61.3", features = [
+    "Win32_Foundation",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Memory",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_Security",
+] }
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
