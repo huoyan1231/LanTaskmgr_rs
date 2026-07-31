@@ -1,0 +1,18 @@
+# Rust build output
+/target
+**/target
+
+# Tauri (generated icons cache, etc.)
+src-tauri/target
+src-tauri/gen
+
+# Editor / OS
+.DS_Store
+Thumbs.db
+*.swp
+
+# Logs
+*.log
+
+# Sandbox workaround build output (CARGO_TARGET_DIR=relbuild)
+/relbuild

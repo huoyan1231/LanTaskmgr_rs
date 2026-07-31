@@ -1,0 +1,499 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>手机任务管理器</title>
+    <style>
+        :root {
+            color-scheme: light dark;
+            --bg: #f4f6fa;
+            --card: #ffffff;
+            --text: #1c1c1e;
+            --muted: #6b7280;
+            --accent: #4f8cff;
+            --border: #e3e7ee;
+            --ok: #4fb477;
+            --bad: #e64646;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #0f1115;
+                --card: #181b21;
+                --text: #e8e8ea;
+                --muted: #9aa0aa;
+                --border: #2a2e36;
+            }
+        }
+
+        * {
+            box-sizing: border-box;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            margin: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            max-width: 480px;
+            margin: 0 auto;
+            padding: 0 0 24px;
+        }
+
+        header {
+            padding: 16px 18px 10px;
+            font-size: 1.15rem;
+            font-weight: 700;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 6px;
+            padding: 0 14px 10px;
+        }
+
+        .tab {
+            flex: 1;
+            text-align: center;
+            padding: 9px 0;
+            font-size: 0.92rem;
+            border-radius: 10px;
+            background: var(--card);
+            border: 1px solid var(--border);
+            cursor: pointer;
+            color: var(--text);
+        }
+
+        .tab.active {
+            background: var(--accent);
+            color: #fff;
+            border-color: var(--accent);
+        }
+
+        .page {
+            display: none;
+            padding: 0 14px;
+        }
+
+        .page.active {
+            display: block;
+        }
+
+        .card {
+            background: var(--card);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            padding: 16px;
+            margin-bottom: 14px;
+        }
+
+        label {
+            display: block;
+            font-size: 0.85rem;
+            color: var(--muted);
+            margin: 12px 0 5px;
+        }
+
+        input[type=text],
+        input[type=password],
+        input[type=number],
+        select {
+            width: 100%;
+            padding: 11px 12px;
+            font-size: 1rem;
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            background: var(--bg);
+            color: var(--text);
+            outline: none;
+        }
+
+        input:focus,
+        select:focus {
+            border-color: var(--accent);
+        }
+
+        .row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-top: 14px;
+        }
+
+        .row label {
+            margin: 0;
+            flex: 1;
+        }
+
+        button {
+            width: 100%;
+            padding: 13px;
+            font-size: 1.02rem;
+            font-weight: 600;
+            color: #fff;
+            background: var(--accent);
+            border: none;
+            border-radius: 12px;
+            cursor: pointer;
+            margin-top: 16px;
+        }
+
+        button:active {
+            filter: brightness(0.94);
+        }
+
+        button.ghost {
+            background: transparent;
+            color: var(--accent);
+            border: 1px solid var(--accent);
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.95rem;
+        }
+
+        .dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: var(--bad);
+        }
+
+        .dot.on {
+            background: var(--ok);
+        }
+
+        .hint {
+            font-size: 0.8rem;
+            color: var(--muted);
+            line-height: 1.5;
+            margin-top: 6px;
+        }
+
+        .addr-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin: 8px 0;
+        }
+
+        .addr {
+            flex: 1;
+            font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+            font-size: 0.95rem;
+            background: var(--bg);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 10px 12px;
+            word-break: break-all;
+        }
+
+        .copybtn {
+            width: auto;
+            margin: 0;
+            padding: 10px 14px;
+            font-size: 0.85rem;
+        }
+
+        .qr {
+            display: block;
+            margin: 12px auto;
+            width: 200px;
+            height: 200px;
+            background: #fff;
+            border-radius: 10px;
+            padding: 8px;
+        }
+
+        .link {
+            color: var(--accent);
+            text-decoration: none;
+            display: block;
+            margin: 8px 0;
+            font-size: 0.92rem;
+        }
+
+        .toast {
+            position: fixed;
+            left: 50%;
+            bottom: 24px;
+            transform: translateX(-50%) translateY(20px);
+            background: rgba(0, 0, 0, 0.82);
+            color: #fff;
+            padding: 10px 18px;
+            border-radius: 10px;
+            font-size: 0.9rem;
+            opacity: 0;
+            transition: all 0.2s ease;
+            pointer-events: none;
+            z-index: 100;
+        }
+
+        .toast.show {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+
+        .desc {
+            font-size: 0.78rem;
+            color: var(--muted);
+        }
+    </style>
+</head>
+
+<body>
+    <header id="appTitle">手机任务管理器</header>
+
+    <div class="tabs">
+        <div class="tab active" data-tab="settings">设置</div>
+        <div class="tab" data-tab="connect">连接</div>
+        <div class="tab" data-tab="help">帮助</div>
+    </div>
+
+    <!-- 设置 -->
+    <div class="page active" id="page-settings">
+        <div class="card">
+            <div class="status">
+                <span class="dot" id="statusDot"></span>
+                <span id="statusText">服务：已关闭</span>
+            </div>
+        </div>
+
+        <div class="card">
+            <label id="lblLanguage">语言</label>
+            <select id="language"></select>
+
+            <label id="lblPort">端口</label>
+            <input id="port" type="number" min="1" max="65535">
+
+            <label id="lblPassword">密码</label>
+            <input id="password" type="password" autocomplete="current-password">
+
+            <div class="row">
+                <label id="lblAuto">开机自动启动</label>
+                <input type="checkbox" id="autostart" style="width:22px;height:22px;">
+            </div>
+            <div class="row">
+                <label id="lblLightweight">轻量模式</label>
+                <input type="checkbox" id="lightweight" style="width:22px;height:22px;">
+            </div>
+            <div class="hint" id="portHint"></div>
+            <div class="hint" id="lightweightHint"></div>
+        </div>
+
+        <button id="saveBtn">保存以上并重启服务</button>
+        <button id="restartBtn" class="ghost">重启服务</button>
+    </div>
+
+    <!-- 连接 -->
+    <div class="page" id="page-connect">
+        <div class="card">
+            <div class="hint" id="openThis"></div>
+            <div class="addr-row">
+                <div class="addr" id="addr"></div>
+                <button class="copybtn" id="copyBtn">复制</button>
+            </div>
+            <img class="qr" id="qr" alt="QR">
+            <div class="hint" id="favor"></div>
+            <div class="hint" id="fwHint"></div>
+        </div>
+        <div id="altList"></div>
+    </div>
+
+    <!-- 帮助 -->
+    <div class="page" id="page-help">
+        <div class="card">
+            <a class="link" id="guideLink" target="_blank">使用指南</a>
+            <a class="link" id="troubleLink" target="_blank">检查连接问题</a>
+            <a class="link" id="aboutLink" target="_blank">关于</a>
+        </div>
+        <div class="card desc">
+            在你的手机浏览器里打开上面的地址（同一局域网），输入密码即可看到电脑上的进程并一键结束它们。<br><br>
+            建议把本程序设为开机自启，并把手机浏览器页面加入收藏夹，关键时刻能救场。
+        </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script>
+        function getInvoke() {
+            try {
+                if (window.__TAURI__ && window.__TAURI__.core && typeof window.__TAURI__.core.invoke === "function") {
+                    return window.__TAURI__.core.invoke;
+                }
+            } catch (e) {}
+            return null;
+        }
+        function callInvoke(cmd, args) {
+            const inv = getInvoke();
+            if (!inv) return Promise.reject(new Error("Tauri 未就绪"));
+            return inv(cmd, args);
+        }
+
+        let snap = null;
+
+        function toast(msg) {
+            const t = document.getElementById("toast");
+            t.textContent = msg;
+            t.classList.add("show");
+            setTimeout(() => t.classList.remove("show"), 1800);
+        }
+
+        async function refresh() {
+            const invoke = getInvoke();
+            if (!invoke) {
+                // Tauri 全局尚未注入，稍后重试（保证页面不会卡在空白）
+                setTimeout(refresh, 300);
+                return;
+            }
+            try {
+                snap = await invoke("snapshot");
+                render();
+            } catch (e) {
+                const st = document.getElementById("statusText");
+                if (st) st.textContent = "无法连接后端：" + e;
+            }
+        }
+
+        function render() {
+            if (!snap) return;
+            document.getElementById("appTitle").textContent = snap.title;
+
+            // 状态
+            const dot = document.getElementById("statusDot");
+            dot.classList.toggle("on", snap.server_working);
+            document.getElementById("statusText").textContent =
+                snap.messages.server + "：" + (snap.server_working ? snap.messages.working : snap.messages.closed) + " " + snap.port;
+
+            // 表单
+            const langSel = document.getElementById("language");
+            if (langSel.options.length !== snap.languages.length) {
+                langSel.innerHTML = "";
+                snap.languages.forEach(l => {
+                    const o = document.createElement("option");
+                    o.value = l.code; o.textContent = l.display;
+                    langSel.appendChild(o);
+                });
+            }
+            langSel.value = snap.language;
+            document.getElementById("port").value = snap.port;
+            document.getElementById("password").value = snap.password;
+            document.getElementById("autostart").checked = snap.autostart;
+            document.getElementById("lightweight").checked = snap.lightweight;
+
+            // 文案
+            document.getElementById("lblLanguage").textContent = snap.language === "CN" ? "语言" :
+                snap.language === "ZHTW" ? "語言" : "Language";
+            document.getElementById("lblPort").textContent = snap.language === "CN" ? "端口" :
+                snap.language === "ZHTW" ? "連接埠" : "Port";
+            document.getElementById("lblPassword").textContent = snap.language === "CN" ? "密码" :
+                snap.language === "ZHTW" ? "密碼" : "Password";
+            document.getElementById("lblAuto").textContent = snap.messages.add_auto_start;
+            document.getElementById("lblLightweight").textContent = snap.language === "CN" ? "轻量模式" :
+                snap.language === "ZHTW" ? "輕量模式" : "Lightweight mode";
+            document.getElementById("portHint").textContent = snap.messages.port_range_hint;
+            document.getElementById("lightweightHint").textContent = snap.messages.lightweight_hint;
+            document.getElementById("saveBtn").textContent = snap.messages.save_and_restart;
+            document.getElementById("restartBtn").textContent = snap.messages.restart;
+
+            // 连接页
+            document.getElementById("openThis").textContent = snap.messages.open_this;
+            document.getElementById("addr").textContent = snap.url;
+            document.getElementById("favor").textContent = snap.messages.add_favor;
+            document.getElementById("fwHint").textContent = snap.messages.firewall_hint;
+            document.getElementById("copyBtn").textContent = snap.messages.copy;
+            document.getElementById("qr").src = "data:image/svg+xml;utf8," + encodeURIComponent(snap.qr);
+
+            // 其他网卡地址
+            const alt = document.getElementById("altList");
+            alt.innerHTML = "";
+            snap.addresses.slice(1).forEach(a => {
+                const c = document.createElement("div");
+                c.className = "card";
+                c.innerHTML = `<div class="desc">${snap.messages.network_card}：${a.desc}</div>
+                    <div class="addr-row"><div class="addr">http://${a.ip}:${snap.port}/</div>
+                    <button class="copybtn" onclick="copyText('http://${a.ip}:${snap.port}/')">${snap.messages.copy}</button></div>`;
+                alt.appendChild(c);
+            });
+
+            // 帮助页链接
+            const guide = snap.language === "CN" ? "https://github.com/gordonwalkedby/RunTaskManagerOnYourPhone/wiki/%E4%BD%BF%E7%94%A8%E6%8C%87%E5%8D%97" :
+                snap.language === "ZHTW" ? "https://github.com/gordonwalkedby/RunTaskManagerOnYourPhone/wiki/%E4%BD%BF%E7%94%A8%E6%8C%87%E5%8D%97" :
+                    "https://github.com/gordonwalkedby/RunTaskManagerOnYourPhone/wiki/Guide-to-use";
+            const trouble = snap.language === "CN" ? "https://github.com/gordonwalkedby/RunTaskManagerOnYourPhone/wiki/%E6%A3%80%E6%9F%A5%E8%BF%9E%E6%8E%A5%E9%97%AE%E9%A2%98" :
+                snap.language === "ZHTW" ? "https://github.com/gordonwalkedby/RunTaskManagerOnYourPhone/wiki/%E6%A3%80%E6%9F%A5%E8%BF%9E%E6%8E%A5%E9%97%AE%E9%A2%98" :
+                    "https://github.com/gordonwalkedby/RunTaskManagerOnYourPhone/wiki/Troubleshoot-connection";
+            const about = snap.language === "CN" ? "https://walkedby.com/runtaskmanageronyourphone/" :
+                "https://github.com/gordonwalkedby/RunTaskManagerOnYourPhone";
+            document.getElementById("guideLink").href = guide;
+            document.getElementById("troubleLink").href = trouble;
+            document.getElementById("aboutLink").href = about;
+            document.getElementById("guideLink").textContent =
+                snap.language === "CN" ? "使用指南" : snap.language === "ZHTW" ? "使用指南" : "Guide to use";
+            document.getElementById("troubleLink").textContent =
+                snap.language === "CN" ? "检查连接问题" : snap.language === "ZHTW" ? "檢查連線問題" : "Troubleshoot connection";
+            document.getElementById("aboutLink").textContent =
+                snap.language === "CN" ? "关于" : snap.language === "ZHTW" ? "關於" : "About";
+        }
+
+        function copyText(t) {
+            navigator.clipboard.writeText(t).then(() => toast(snap.messages.copied));
+        }
+
+        // 事件
+        document.querySelectorAll(".tab").forEach(t => {
+            t.addEventListener("click", () => {
+                document.querySelectorAll(".tab").forEach(x => x.classList.remove("active"));
+                document.querySelectorAll(".page").forEach(x => x.classList.remove("active"));
+                t.classList.add("active");
+                document.getElementById("page-" + t.dataset.tab).classList.add("active");
+            });
+        });
+
+        document.getElementById("language").addEventListener("change", async (e) => {
+            await callInvoke("set_language", { language: e.target.value });
+            await refresh();
+        });
+
+        document.getElementById("saveBtn").addEventListener("click", async () => {
+            const password = document.getElementById("password").value;
+            const port = parseInt(document.getElementById("port").value, 10) || 5555;
+            const language = document.getElementById("language").value;
+            const autostart = document.getElementById("autostart").checked;
+            const lightweight = document.getElementById("lightweight").checked;
+            const msg = await callInvoke("save_settings", { password, port, language, autostart, lightweight });
+            toast(msg);
+            await refresh();
+        });
+
+        document.getElementById("restartBtn").addEventListener("click", async () => {
+            await callInvoke("restart_service");
+            await refresh();
+            toast(snap.messages.restart);
+        });
+
+        document.getElementById("copyBtn").addEventListener("click", () => copyText(snap.url));
+
+        refresh();
+        setInterval(refresh, 2000);
+    </script>
+    <script>
+        // 提供全局 copyText 给动态生成的按钮
+        window.copyText = function (t) {
+            navigator.clipboard.writeText(t).then(() => {
+                const toast = document.getElementById("toast");
+                toast.textContent = (snap && snap.messages.copied) || "已复制";
+                toast.classList.add("show");
+                setTimeout(() => toast.classList.remove("show"), 1800);
+            });
+        };
+    </script>
+</body>
+
+</html>

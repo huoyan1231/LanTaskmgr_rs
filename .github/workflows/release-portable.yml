@@ -1,0 +1,80 @@
+name: Portable Release
+
+# 自动构建并发布「便携版」Release：
+#   - 推送形如 v1.0.0 的 tag 时自动触发，编译并把单文件 exe 打成 zip 上传到同名 Release；
+#   - 也可在 GitHub 的 Actions 页面手动（workflow_dispatch）触发。
+# 产物：LanTaskmgr_rs_Portable_vX.Y.Z.zip（含 LanTaskmgr_rs.exe + 便携版说明.txt）。
+#
+# 说明：前端（ui/）在编译时经 build.rs -> tauri-build 嵌入二进制，
+# 因此 `cargo build --release` 产出的 exe 可独立运行，无需附带资源目录、无需 NSIS。
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  portable:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (MSVC)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Build release binary
+        working-directory: ./src-tauri
+        run: cargo build --release
+
+      - name: Prepare portable zip
+        shell: pwsh
+        run: |
+          $exe = "src-tauri/target/release/lantaskmgr_rs.exe"
+          $ver = "${{ github.ref_name }}"
+          $dist = "dist"
+          New-Item -ItemType Directory -Force -Path $dist | Out-Null
+          Copy-Item $exe -Destination "$dist/LanTaskmgr_rs.exe"
+          $lines = @(
+            "手机任务管理器 · 便携版",
+            "========================",
+            "1. 直接运行 LanTaskmgr_rs.exe 即可，无需安装。",
+            "2. 首次运行若弹出防火墙提示，请允许（否则手机无法访问）。",
+            "3. 程序启动后会在桌面弹出设置窗口，记下「手机访问地址」，",
+            "   例如 http://192.168.1.10:5555/",
+            "4. 手机浏览器打开该地址即可查看并结束电脑进程。",
+            "5. 关闭主窗口不会退出程序，手机端服务继续运行；右键托盘图标可退出。",
+            "6. 需要 Windows 10/11 且已安装 WebView2 运行时（Win10/11 一般自带）。"
+          )
+          Set-Content -Path "$dist/便携版说明.txt" -Encoding UTF8 -Value $lines
+          $zip = "dist/LanTaskmgr_rs_Portable_$ver.zip"
+          Compress-Archive -Path "$dist/LanTaskmgr_rs.exe", "$dist/便携版说明.txt" -DestinationPath $zip -Force
+          echo "ZIP=$zip"
+
+      - name: Publish portable release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/LanTaskmgr_rs_Portable_*.zip
+          name: LanTaskmgr_rs Portable ${{ github.ref_name }}
+          body: |
+            手机任务管理器 Rust 重写版 —— 便携版（单文件 exe，解压即跑）。
+
+            - 下载 `LanTaskmgr_rs_Portable_${{ github.ref_name }}.zip` 解压运行；
+            - 需要 Windows 10/11 + WebView2 运行时（一般已自带）；
+            - 手机浏览器访问桌面设置页显示的「手机访问地址」即可管控进程。
+          draft: false
+          prerelease: false
+          overwrite: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
