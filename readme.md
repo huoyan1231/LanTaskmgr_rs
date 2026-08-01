@@ -1,5 +1,7 @@
 # LanTaskmgr_rs
 
+[C版本](https://github.com/huoyan1231/LanTaskmgr)
+
 用手机浏览器结束电脑上失控的进程。
 
 当 Windows 把 CPU 占满、桌面停止刷新时，任务管理器恰恰是那个你打不开的东西。
@@ -17,14 +19,14 @@ LanTaskmgr_rs 在局域网内常驻一个轻量 HTTP 服务，让你在手机上
 这个工具要 **24/7 常驻**，而且关键在于：当机器已经资源耗尽时它**必须还能响应**。
 每多占一分内存，都是在和它的初衷作对。所以我们换了个写法：
 
-|                    | 原版 (VB.NET)                | LanTaskmgr_rs                     |
-| ------------------ | ---------------------------- | --------------------------------- |
-| 语言               | VB.NET / WinForms            | Rust + Tauri v2                   |
-| 运行时依赖         | .NET Framework               | WebView2 运行时（系统一般已自带）|
-| 需分发的文件       | 多（exe + DLL + web + 语言） | 1 个（`lantaskmgr_rs.exe`，前端已嵌入）|
-| UI                 | WinForms                     | WebView2（HTML/CSS/JS），支持深色模式 |
-| 进程枚举           | .NET `Process` API           | `sysinfo` + Win32 `EnumWindows`   |
-| 手机端             | 内嵌网页                     | 内嵌网页（简体 / English / 繁體）  |
+|        | 原版 (VB.NET)             | LanTaskmgr_rs                   |
+| ------ | ----------------------- | ------------------------------- |
+| 语言     | VB.NET / WinForms       | Rust + Tauri v2                 |
+| 运行时依赖  | .NET Framework          | WebView2 运行时（系统一般已自带）           |
+| 需分发的文件 | 多（exe + DLL + web + 语言） | 1 个（`lantaskmgr_rs.exe`，前端已嵌入）  |
+| UI     | WinForms                | WebView2（HTML/CSS/JS），支持深色模式    |
+| 进程枚举   | .NET `Process` API      | `sysinfo` + Win32 `EnumWindows` |
+| 手机端    | 内嵌网页                    | 内嵌网页（简体 / English / 繁體）         |
 
 老实说：Tauri 依赖系统里已有的 **WebView2 运行时**（Win10/11 通常自带，缺了装一下即可），
 做不到 C 重写版那种"零依赖纯 Win32 单文件"。换来的好处是 UI 用真正的网页技术写，
