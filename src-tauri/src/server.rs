@@ -414,38 +414,63 @@ async fn handler(
     // 8) 已登录
     if rawurl.ends_with("/kill") {
         let target = body.trim().to_string();
-        // 只允许按 PID 精确结束，避免按名字误杀同名进程。
-        if target.is_empty() || target.len() > 16 {
+        // 只允许按 PID 精确结束，支持单个或逗号分隔的多个 PID（如 "1234,5678"），
+        // 避免按名字误杀同名进程。批量时只要有一个受保护就整体拒绝。
+        if target.is_empty() || target.len() > 256 {
             return (text_plain(), "fail".to_string()).into_response();
         }
-        match target.parse::<u32>() {
-            Err(_) => return (text_plain(), "fail".to_string()).into_response(),
-            Ok(pid) => {
-                crate::logger::log(format!("结束进程：{ip} pid={pid}"));
-                match process::kill_by_pid(pid) {
-                    process::KillResult::Ok => {
-                        return with_security_headers((text_plain(), "ok".to_string()))
-                            .into_response();
-                    }
-                    process::KillResult::Partial => {
-                        return with_security_headers((text_plain(), "fail".to_string()))
-                            .into_response();
-                    }
-                    process::KillResult::NotFound => {
-                        return (StatusCode::NOT_FOUND, text_plain(), "gone".to_string())
-                            .into_response();
-                    }
-                    process::KillResult::Protected => {
-                        return (
-                            StatusCode::FORBIDDEN,
-                            text_plain(),
-                            "protected".to_string(),
-                        )
-                            .into_response();
-                    }
+        let mut protected = false;
+        let mut not_found = false;
+        let mut any_ok = false;
+        let mut any_failed = false;
+        for part in target.split(',') {
+            let part = part.trim();
+            if part.is_empty() {
+                continue;
+            }
+            let pid = match part.parse::<u32>() {
+                Ok(p) => p,
+                Err(_) => {
+                    return (text_plain(), "fail".to_string()).into_response();
+                }
+            };
+            crate::logger::log(format!("结束进程：{ip} pid={pid}"));
+            match process::kill_by_pid(pid) {
+                process::KillResult::Ok => {
+                    any_ok = true;
+                }
+                process::KillResult::Partial => {
+                    any_failed = true;
+                }
+                process::KillResult::NotFound => {
+                    not_found = true;
+                }
+                process::KillResult::Protected => {
+                    protected = true;
                 }
             }
         }
+        if protected {
+            return (
+                StatusCode::FORBIDDEN,
+                text_plain(),
+                "protected".to_string(),
+            )
+                .into_response();
+        }
+        if any_ok && !any_failed {
+            return with_security_headers((text_plain(), "ok".to_string())).into_response();
+        }
+        if any_failed {
+            return with_security_headers((text_plain(), "fail".to_string())).into_response();
+        }
+        // 全部 not found（没有任何成功/失败）
+        return (
+            StatusCode::NOT_FOUND,
+            text_plain(),
+            "gone".to_string(),
+        )
+            .into_response();
     }
 
     if rawurl.ends_with("/list") {

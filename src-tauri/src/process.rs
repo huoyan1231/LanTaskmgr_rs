@@ -13,10 +13,19 @@ use windows::Win32::UI::WindowsAndMessaging::{
     EnumWindows, GetWindowTextW, GetWindowThreadProcessId, IsWindowVisible,
 };
 
-/// 手机端 manager 页面里的一个进程条目。字段名与原参考实现（D:/git/LanTaskmgr/web/app.js）一一对应。
+/// 聚合条目下某个具体实例（用于按 PID 精确结束，避免误杀同名其它实例）。
+#[derive(Debug, Clone, Serialize)]
+pub struct PinInfo {
+    /// 进程 ID
+    pub p: u32,
+    /// 该实例的主窗口标题（没有则空串）
+    pub t: String,
+}
+
+/// 手机端 manager 页面里的一个进程条目（按镜像名聚合，多个实例汇总到 pins）。
 #[derive(Debug, Clone, Serialize)]
 pub struct ProcInfo {
-    /// 进程 ID（用于精确结束，避免按名字误杀同名进程）
+    /// 首个实例的进程 ID（兼容字段，真正按 PID 结束用 pins 里的 p）
     pub pid: u32,
     /// 镜像名（含 .exe）
     pub n: String,
@@ -33,6 +42,8 @@ pub struct ProcInfo {
     pub c: u8,
     /// 同名实例个数
     pub i: u32,
+    /// 各实例列表（每个含 pid 与标题），前端按 PID 精确结束其中某一个或全部
+    pub pins: Vec<PinInfo>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -90,10 +101,8 @@ fn is_system_process(name: &str) -> bool {
     SYSTEM_PROCESSES.contains(&lower.as_str())
 }
 
-/// 收集当前进程列表（每个进程实例一行，不带 PID 聚合），并补上窗口标题、内存、CPU 等。
-///
-/// 不再按镜像名聚合：同名进程（如多个 svchost.exe）会分别列出，每条带独立 PID，
-/// 这样前端可以精确结束某一个实例，不会因为「按名字全杀」而误伤其它同名进程。
+/// 收集当前进程列表，按镜像名聚合；同名进程的多个实例汇总到 `pins`
+/// （每个实例含独立 PID 与标题），前端按 PID 精确结束某一个或全部，避免误杀。
 pub fn list() -> ListResponse {
     let titles = window_titles();
     let mut sys = sysinfo::System::new();
@@ -101,7 +110,7 @@ pub fn list() -> ListResponse {
     sys.refresh_cpu_all();
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
-    let mut list: Vec<ProcInfo> = Vec::new();
+    let mut groups: HashMap<String, ProcInfo> = HashMap::new();
 
     for (pid, proc_) in sys.processes() {
         let name = proc_.name().to_string_lossy().to_string();
@@ -115,27 +124,41 @@ pub fn list() -> ListResponse {
             .cloned()
             .unwrap_or_default();
 
-        let sys_p = is_system_process(stripped);
-        let protected = is_protected(stripped, *pid, &sys);
-
-        list.push(ProcInfo {
-            pid: pid.as_u32(),
-            n: name.clone(),
-            t: title.clone(),
-            m: proc_.memory(),
-            p: proc_.cpu_usage(),
-            k: protected,
-            c: if sys_p {
-                2
-            } else if !title.is_empty() {
-                1
-            } else {
-                0
-            },
-            i: 1,
+        let entry = groups.entry(lower.clone()).or_insert_with(|| {
+            let sys_p = is_system_process(stripped);
+            ProcInfo {
+                pid: pid.as_u32(),
+                n: name.clone(),
+                t: String::new(),
+                m: 0,
+                p: 0.0,
+                k: is_protected(stripped, *pid, &sys),
+                c: if sys_p {
+                    2
+                } else if !title.is_empty() {
+                    1
+                } else {
+                    0
+                },
+                i: 0,
+                pins: Vec::new(),
+            }
+        });
+        entry.i += 1;
+        entry.m += proc_.memory();
+        entry.p += proc_.cpu_usage();
+        // 首个实例没有标题时，用当前实例的标题补充（提升可读）
+        if entry.t.is_empty() && !title.is_empty() {
+            entry.t = title.clone();
+        }
+        // 每个实例都记录 PID + 标题，前端据此精确结束
+        entry.pins.push(PinInfo {
+            p: pid.as_u32(),
+            t: title,
         });
     }
 
+    let mut list: Vec<ProcInfo> = groups.into_values().collect();
     list.sort_by(|a, b| a.n.to_lowercase().cmp(&b.n.to_lowercase()));
 
     let total = sys.total_memory();
