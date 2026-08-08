@@ -158,8 +158,16 @@ pub fn list() -> ListResponse {
         });
     }
 
-    let mut list: Vec<ProcInfo> = groups.into_values().collect();
-    list.sort_by(|a, b| a.n.to_lowercase().cmp(&b.n.to_lowercase()));
+    let collected: Vec<ProcInfo> = groups.into_values().collect();
+    // 预计算每个条目的小写名字作为排序 key，避免 sort 比较闭包里反复分配
+    // to_lowercase()（否则复杂度会变成 O(n log n) 次临时字符串分配）。
+    let mut indexed: Vec<(String, ProcInfo)> = collected
+        .into_iter()
+        .map(|p| (p.n.to_ascii_lowercase(), p))
+        .collect();
+    indexed.sort_by(|a, b| a.0.cmp(&b.0));
+    let list: Vec<ProcInfo> = indexed.into_iter().map(|(_, p)| p).collect();
+
 
     let total = sys.total_memory();
     let used = sys.used_memory();
