@@ -16,6 +16,8 @@ use windows::Win32::UI::WindowsAndMessaging::{
 /// 手机端 manager 页面里的一个进程条目。字段名与原参考实现（D:/git/LanTaskmgr/web/app.js）一一对应。
 #[derive(Debug, Clone, Serialize)]
 pub struct ProcInfo {
+    /// 进程 ID（用于精确结束，避免按名字误杀同名进程）
+    pub pid: u32,
     /// 镜像名（含 .exe）
     pub n: String,
     /// 主窗口标题（没有则空串）
@@ -25,7 +27,7 @@ pub struct ProcInfo {
     pub m: u64,
     /// CPU 占用百分比，同名下多个实例累加
     pub p: f32,
-    /// 受保护（不可结束）。这里统一为 false：系统进程仅警告、不禁止结束
+    /// 受保护（不可结束）：本程序自身进程、父进程等。系统进程仅警告、不禁止结束。
     pub k: bool,
     /// 分类：0=其它 1=有窗口的应用 2=系统进程
     pub c: u8,
@@ -47,13 +49,12 @@ pub struct ListResponse {
 }
 
 /// 原程序的系统进程名单（保持完全一致，便于行为对照）。
-const SYSTEM_PROCESSES: [&str; 34] = [
+const SYSTEM_PROCESSES: [&str; 33] = [
     "system",
     "svchost",
     "surfaceservice",
     "surfacedtx",
     "surfacedtxservice",
-    "surfaceservice",
     "startmenuexperiencehost",
     "spoolsv",
     "smss",
@@ -89,7 +90,10 @@ fn is_system_process(name: &str) -> bool {
     SYSTEM_PROCESSES.contains(&lower.as_str())
 }
 
-/// 收集当前进程列表，按镜像名聚合，并补上窗口标题、内存、CPU 等。
+/// 收集当前进程列表（每个进程实例一行，不带 PID 聚合），并补上窗口标题、内存、CPU 等。
+///
+/// 不再按镜像名聚合：同名进程（如多个 svchost.exe）会分别列出，每条带独立 PID，
+/// 这样前端可以精确结束某一个实例，不会因为「按名字全杀」而误伤其它同名进程。
 pub fn list() -> ListResponse {
     let titles = window_titles();
     let mut sys = sysinfo::System::new();
@@ -97,7 +101,7 @@ pub fn list() -> ListResponse {
     sys.refresh_cpu_all();
     sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
 
-    let mut groups: HashMap<String, ProcInfo> = HashMap::new();
+    let mut list: Vec<ProcInfo> = Vec::new();
 
     for (pid, proc_) in sys.processes() {
         let name = proc_.name().to_string_lossy().to_string();
@@ -105,39 +109,33 @@ pub fn list() -> ListResponse {
             continue;
         }
         let lower = name.to_ascii_lowercase();
+        let stripped = lower.strip_suffix(".exe").unwrap_or(&lower);
+        let title = titles
+            .get(&pid.as_u32())
+            .cloned()
+            .unwrap_or_default();
 
-        let entry = groups.entry(lower.clone()).or_insert_with(|| ProcInfo {
+        let sys_p = is_system_process(stripped);
+        let protected = is_protected(stripped, *pid, &sys);
+
+        list.push(ProcInfo {
+            pid: pid.as_u32(),
             n: name.clone(),
-            t: String::new(),
-            m: 0,
-            p: 0.0,
-            k: false,
-            c: 0,
-            i: 0,
+            t: title.clone(),
+            m: proc_.memory(),
+            p: proc_.cpu_usage(),
+            k: protected,
+            c: if sys_p {
+                2
+            } else if !title.is_empty() {
+                1
+            } else {
+                0
+            },
+            i: 1,
         });
-        entry.i += 1;
-        entry.m += proc_.memory();
-        entry.p += proc_.cpu_usage();
-        if entry.t.is_empty() {
-            if let Some(title) = titles.get(&pid.as_u32()) {
-                if !title.is_empty() {
-                    entry.t = title.clone();
-                }
-            }
-        }
     }
 
-    let mut list: Vec<ProcInfo> = groups.into_values().collect();
-    for p in list.iter_mut() {
-        let sys_p = is_system_process(&p.n);
-        p.c = if sys_p {
-            2
-        } else if !p.t.is_empty() {
-            1
-        } else {
-            0
-        };
-    }
     list.sort_by(|a, b| a.n.to_lowercase().cmp(&b.n.to_lowercase()));
 
     let total = sys.total_memory();
@@ -154,9 +152,45 @@ pub fn list() -> ListResponse {
     }
 }
 
+/// 结束进程的结果。
+#[derive(Debug, PartialEq, Eq)]
+pub enum KillResult {
+    /// 匹配到且全部结束成功
+    Ok,
+    /// 匹配到但部分或全部结束失败（权限不足等）
+    Partial,
+    /// 该名字不存在任何进程
+    NotFound,
+    /// 该进程受保护（系统关键 / 本程序自身及子树），已拒绝
+    Protected,
+}
+
+/// 是否受保护（不可结束）：系统关键进程 + 本程序自身及其父进程、WebView 子树。
+/// 受保护进程一旦被结束会导致本服务崩溃、系统不稳定甚至 BSOD，必须硬拒绝。
+fn is_protected(stripped: &str, pid: sysinfo::Pid, sys: &sysinfo::System) -> bool {
+    if SYSTEM_PROCESSES.contains(&stripped) {
+        return true;
+    }
+    // 保护自己：本进程、父进程、lantaskmgr 主程序名（即使被改名也不杀）
+    if stripped == "lantaskmgr_rs" || stripped == "lantaskmgr" {
+        return true;
+    }
+    let self_pid = sysinfo::Pid::from_u32(std::process::id());
+    if pid == self_pid {
+        return true;
+    }
+    if let Some(self_proc) = sys.process(self_pid) {
+        if let Some(parent) = self_proc.parent() {
+            if pid == parent {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 /// 结束与给定名字相同的所有进程（去掉 .exe 后缀，与原程序 Process.GetProcessesByName 对齐）。
-/// 返回是否「至少匹配到一个进程且全部结束成功」；名字不存在返回 false。
-pub fn kill_by_name(name: &str) -> bool {
+pub fn kill_by_name(name: &str) -> KillResult {
     let target = name.to_ascii_lowercase();
     let target = target.strip_suffix(".exe").unwrap_or(&target);
 
@@ -165,19 +199,56 @@ pub fn kill_by_name(name: &str) -> bool {
 
     let mut found = false;
     let mut failed = false;
-    for (_pid, proc_) in sys.processes() {
+    let mut protected = false;
+    for (pid, proc_) in sys.processes() {
         let pname = proc_.name().to_string_lossy().to_string();
         let pname = pname.to_ascii_lowercase();
         let pname = pname.strip_suffix(".exe").unwrap_or(&pname);
         if pname == target {
             found = true;
+            if is_protected(&pname, *pid, &sys) {
+                protected = true;
+                continue;
+            }
             if !proc_.kill() {
                 failed = true;
             }
         }
     }
-    // 至少要有一个匹配进程，且全部杀掉才算成功；名字不存在应返回失败
-    found && !failed
+    if !found {
+        return KillResult::NotFound;
+    }
+    if protected {
+        return KillResult::Protected;
+    }
+    if failed {
+        KillResult::Partial
+    } else {
+        KillResult::Ok
+    }
+}
+
+/// 精确结束指定 PID 的单个进程（防误杀：不会牵连同名其它实例）。
+pub fn kill_by_pid(pid: u32) -> KillResult {
+    let mut sys = sysinfo::System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+
+    let target = sysinfo::Pid::from_u32(pid);
+    match sys.process(target) {
+        None => KillResult::NotFound,
+        Some(proc_) => {
+            let name = proc_.name().to_string_lossy().to_ascii_lowercase();
+            let stripped = name.strip_suffix(".exe").unwrap_or(&name);
+            if is_protected(stripped, target, &sys) {
+                return KillResult::Protected;
+            }
+            if proc_.kill() {
+                KillResult::Ok
+            } else {
+                KillResult::Partial
+            }
+        }
+    }
 }
 
 // ---------------- WebView2 进程回收（轻量模式用） ----------------
