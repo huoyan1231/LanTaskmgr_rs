@@ -9,7 +9,7 @@
 - 仓库：`D:/git/LanTaskmgr_rs`
 - 程序名：`LanTaskmgr_rs`（exe：`lantaskmgr_rs.exe`，identifier：`com.lantaskmgr.rs`）
 - 作者：`huoyan1231`
-- 默认无密码；默认端口 `5555`；绑定 `0.0.0.0`（手机才能访问）。
+- 默认无密码；默认端口 `5555`；绑定 `0.0.0.0`（手机才能访问）；可改填具体局域网 IP 只在该网卡监听（防公网暴露）。
 
 ## 技术栈
 - **Rust + Tauri v2**（窗口 label = `"main"`，托盘图标 + 菜单）。

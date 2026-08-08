@@ -48,6 +48,8 @@ pub struct Lang {
     pub firewall_hint: &'static str,
     pub lightweight: &'static str,
     pub lightweight_hint: &'static str,
+    pub bind: &'static str,
+    pub bind_hint: &'static str,
 }
 
 pub const EN: Lang = Lang {
@@ -90,6 +92,8 @@ pub const EN: Lang = Lang {
     firewall_hint: "If your phone can't connect, allow this app through Windows Firewall on a private network.",
     lightweight: "Lightweight mode",
     lightweight_hint: "When on, closing the window fully stops the app window to free resources. The service keeps running for your phone; open it again from the tray.",
+    bind: "Bind to IP",
+    bind_hint: "Usually 0.0.0.0 (all interfaces, phones can connect). Enter a specific LAN IP to only listen on that address and avoid exposing the web UI on other networks (e.g. public Wi-Fi).",
 };
 
 pub const CN: Lang = Lang {
@@ -131,6 +135,8 @@ pub const CN: Lang = Lang {
     firewall_hint: "如果手机连不上，请在 Windows 防火墙里允许本程序在专用网络上通信。",
     lightweight: "轻量模式",
     lightweight_hint: "开启后，关闭窗口会彻底停止应用窗口以释放资源。服务仍为手机运行，可从托盘重新打开。",
+    bind: "绑定到 IP",
+    bind_hint: "一般为 0.0.0.0（监听所有网卡，手机可访问）。填写具体局域网 IP 则只在该地址监听，避免把网页管理界面暴露到其它网络（如公共 Wi-Fi）。",
 };
 
 pub const ZHTW: Lang = Lang {
@@ -172,6 +178,8 @@ pub const ZHTW: Lang = Lang {
     firewall_hint: "如果手機連不上，請在 Windows 防火牆裡允許本程式在專用網路上通訊。",
     lightweight: "輕量模式",
     lightweight_hint: "開啟後，關閉視窗會徹底停止應用視窗以釋放資源。服務仍為手機運行，可從托盤重新開啟。",
+    bind: "綁定到 IP",
+    bind_hint: "一般為 0.0.0.0（監聽所有網卡，手機可存取）。填寫具體區域網路 IP 則只在該位址監聽，避免把網頁管理介面暴露到其它網路（如公共 Wi-Fi）。",
 };
 
 pub const ALL: [&Lang; 3] = [&EN, &CN, &ZHTW];

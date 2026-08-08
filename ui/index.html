@@ -283,8 +283,12 @@
                 <label id="lblLightweight">轻量模式</label>
                 <input type="checkbox" id="lightweight" style="width:22px;height:22px;">
             </div>
+
+            <label id="lblBind">绑定到 IP</label>
+            <input id="bind" type="text" autocomplete="off" spellcheck="false" placeholder="0.0.0.0">
             <div class="hint" id="portHint"></div>
             <div class="hint" id="lightweightHint"></div>
+            <div class="hint" id="bindHint"></div>
         </div>
 
         <button id="saveBtn">保存以上并重启服务</button>
@@ -386,6 +390,7 @@
             document.getElementById("password").value = snap.password;
             document.getElementById("autostart").checked = snap.autostart;
             document.getElementById("lightweight").checked = snap.lightweight;
+            document.getElementById("bind").value = snap.bind;
 
             // 文案
             document.getElementById("lblLanguage").textContent = snap.language === "CN" ? "语言" :
@@ -397,8 +402,11 @@
             document.getElementById("lblAuto").textContent = snap.messages.add_auto_start;
             document.getElementById("lblLightweight").textContent = snap.language === "CN" ? "轻量模式" :
                 snap.language === "ZHTW" ? "輕量模式" : "Lightweight mode";
+            document.getElementById("lblBind").textContent = snap.language === "CN" ? "绑定到 IP" :
+                snap.language === "ZHTW" ? "綁定到 IP" : "Bind to IP";
             document.getElementById("portHint").textContent = snap.messages.port_range_hint;
             document.getElementById("lightweightHint").textContent = snap.messages.lightweight_hint;
+            document.getElementById("bindHint").textContent = snap.messages.bind_hint;
             document.getElementById("saveBtn").textContent = snap.messages.save_and_restart;
             document.getElementById("restartBtn").textContent = snap.messages.restart;
 
@@ -467,7 +475,8 @@
             const language = document.getElementById("language").value;
             const autostart = document.getElementById("autostart").checked;
             const lightweight = document.getElementById("lightweight").checked;
-            const msg = await callInvoke("save_settings", { password, port, language, autostart, lightweight });
+            const bind = document.getElementById("bind").value;
+            const msg = await callInvoke("save_settings", { password, port, language, autostart, lightweight, bind });
             toast(msg);
             await refresh();
         });

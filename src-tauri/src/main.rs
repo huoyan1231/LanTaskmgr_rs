@@ -61,6 +61,7 @@ struct Snapshot {
     languages: Vec<LangInfo>,
     autostart: bool,
     lightweight: bool,
+    bind: String,
     addresses: Vec<NetItem>,
     url: String,
     qr: String,
@@ -95,6 +96,8 @@ struct Messages {
     auto_start_off: String,
     lightweight: String,
     lightweight_hint: String,
+    bind: String,
+    bind_hint: String,
 }
 
 fn lang_info() -> Vec<LangInfo> {
@@ -109,6 +112,21 @@ fn lang_info() -> Vec<LangInfo> {
 
 fn current_lang(code: &str) -> &'static Lang {
     i18n::get(code)
+}
+
+/// 规范化绑定地址：空或非法 IPv4 一律回退到 0.0.0.0（监听所有网卡）。
+/// 这样即使误填公网域名/错误格式也不会把服务绑到不可预期的地方。
+fn normalize_bind(bind: &str) -> String {
+    let b = bind.trim();
+    if b.is_empty() {
+        return "0.0.0.0".to_string();
+    }
+    // 仅接受合法的 IPv4 地址（不含端口、不含通配符以外的字符）
+    if b.parse::<std::net::Ipv4Addr>().is_ok() {
+        b.to_string()
+    } else {
+        "0.0.0.0".to_string()
+    }
 }
 
 #[tauri::command]
@@ -148,6 +166,8 @@ fn snapshot() -> Snapshot {
         auto_start_off: lang.auto_start_off.to_string(),
         lightweight: lang.lightweight.to_string(),
         lightweight_hint: lang.lightweight_hint.to_string(),
+        bind: lang.bind.to_string(),
+        bind_hint: lang.bind_hint.to_string(),
     };
     Snapshot {
         title: lang.title.to_string(),
@@ -158,6 +178,7 @@ fn snapshot() -> Snapshot {
         languages: lang_info(),
         autostart: s.autostart,
         lightweight: s.lightweight,
+        bind: s.bind,
         addresses,
         url,
         qr,
@@ -166,9 +187,10 @@ fn snapshot() -> Snapshot {
 }
 
 #[tauri::command]
-fn save_settings(password: String, port: u16, language: String, autostart: bool, lightweight: bool) -> String {
+fn save_settings(password: String, port: u16, language: String, autostart: bool, lightweight: bool, bind: String) -> String {
     let state = app_state();
     let lang = current_lang(&language);
+    let bind = normalize_bind(&bind);
     {
         let mut s = state.settings.lock().unwrap();
         s.password = password;
@@ -176,6 +198,7 @@ fn save_settings(password: String, port: u16, language: String, autostart: bool,
         s.language = language.clone();
         s.autostart = autostart;
         s.lightweight = lightweight;
+        s.bind = bind.clone();
         settings::save(&s);
     }
 
