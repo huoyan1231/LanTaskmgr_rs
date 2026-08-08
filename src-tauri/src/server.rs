@@ -68,6 +68,8 @@ pub struct ServerState {
     /// /list 响应缓存：避免前端短轮询时每次都全量枚举进程+窗口。
     /// 第二个元素是缓存写入时刻，超过 TTL 即失效重新生成。
     list_cache: Mutex<Option<(String, Instant)>>,
+    /// 按语言缓存替换 WEBLANGUAGE 后的 app.js，避免每个请求都重复做字符串替换。
+    js_cache: Mutex<HashMap<String, String>>,
 }
 
 /// /list 缓存有效期：前端通常 1~3s 轮询一次，1.5s TTL 既能砍掉重复快照，
@@ -82,6 +84,7 @@ impl ServerState {
             language: Mutex::new("EN".to_string()),
             sessions: Mutex::new(HashMap::new()),
             list_cache: Mutex::new(None),
+            js_cache: Mutex::new(HashMap::new()),
         }
     }
 
@@ -197,6 +200,20 @@ impl ServerState {
             None
         }
     }
+
+    /// 取按语言注入后的 app.js；命中缓存直接返回，否则替换并写入。
+    /// 语言由用户在设置页切换，变化频率极低，缓存基本恒命中。
+    fn js_for_lang(&self, lang: &str) -> String {
+        {
+            let guard = self.js_cache.lock().unwrap();
+            if let Some(body) = guard.get(lang) {
+                return body.clone();
+            }
+        }
+        let body = replace_lang(web::APP_JS, lang);
+        self.js_cache.lock().unwrap().insert(lang.to_string(), body.clone());
+        body
+    }
 }
 
 fn random_token() -> String {
@@ -237,6 +254,8 @@ impl ServerHandle {
         };
         *self.state.password_hash.lock().unwrap() = hash;
         *self.state.language.lock().unwrap() = language.to_string();
+        // 语言可能变化，让已缓存的 app.js 失效（下次请求重新生成）
+        self.clear_js_cache();
         *self.port.lock().unwrap() = port;
 
         let addr = format!("{bind}:{port}");
@@ -293,6 +312,11 @@ impl ServerHandle {
 
     pub fn is_running(&self) -> bool {
         *self.running.lock().unwrap()
+    }
+
+    /// 语言设置变更后清空已缓存的 app.js（下次请求重新按新语言生成）。
+    pub fn clear_js_cache(&self) {
+        self.state.js_cache.lock().unwrap().clear();
     }
 }
 
@@ -355,7 +379,7 @@ async fn handler(
     // 3) 脚本（注入语言）
     if rawurl.ends_with(".js") {
         let lang = state.language.lock().unwrap().clone();
-        let body = replace_lang(web::APP_JS, &lang);
+        let body = state.js_for_lang(&lang);
         let mut headers = axum::http::HeaderMap::new();
         headers.insert(
             axum::http::header::CONTENT_TYPE,
