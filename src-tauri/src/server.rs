@@ -62,7 +62,14 @@ pub struct ServerState {
     pub language: Mutex<String>,
     /// token -> (ip, last_visit)
     pub sessions: Mutex<HashMap<String, (String, Instant)>>,
+    /// /list 响应缓存：避免前端短轮询时每次都全量枚举进程+窗口。
+    /// 第二个元素是缓存写入时刻，超过 TTL 即失效重新生成。
+    list_cache: Mutex<Option<(String, Instant)>>,
 }
+
+/// /list 缓存有效期：前端通常 1~3s 轮询一次，1.5s TTL 既能砍掉重复快照，
+/// 又不至于让手机端看到明显过期的进程列表。
+const LIST_CACHE_TTL: Duration = Duration::from_millis(1500);
 
 impl ServerState {
     pub fn new() -> Self {
@@ -71,7 +78,25 @@ impl ServerState {
             password_hash: Mutex::new(String::new()),
             language: Mutex::new("EN".to_string()),
             sessions: Mutex::new(HashMap::new()),
+            list_cache: Mutex::new(None),
         }
+    }
+
+    /// 取进程列表 JSON；命中未过期缓存则直接返回，否则重新生成并写入。
+    fn list_json(&self) -> String {
+        {
+            let guard = self.list_cache.lock().unwrap();
+            if let Some((body, ts)) = guard.as_ref() {
+                if ts.elapsed() < LIST_CACHE_TTL {
+                    return body.clone();
+                }
+            }
+        }
+        let list = process::list();
+        let body = serde_json::to_string(&list)
+            .unwrap_or_else(|_| "{\"mem\":{\"pct\":0,\"used\":0,\"total\":0},\"list\":[]}".into());
+        *self.list_cache.lock().unwrap() = Some((body.clone(), Instant::now()));
+        body
     }
 
     fn device(
@@ -473,9 +498,7 @@ async fn handler(
     }
 
     if rawurl.ends_with("/list") {
-        let list = process::list();
-        let body = serde_json::to_string(&list)
-            .unwrap_or_else(|_| "{\"mem\":{\"pct\":0,\"used\":0,\"total\":0},\"list\":[]}".into());
+        let body = state.list_json();
         return with_security_headers((text_plain(), body)).into_response();
     }
 
