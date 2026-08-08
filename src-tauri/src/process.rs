@@ -220,18 +220,15 @@ fn is_protected(stripped: &str, pid: sysinfo::Pid, sys: &sysinfo::System) -> boo
     false
 }
 
-/// 精确结束指定 PID 的单个进程（防误杀：不会牵连同名其它实例）。
-pub fn kill_by_pid(pid: u32) -> KillResult {
-    let mut sys = sysinfo::System::new();
-    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-
+/// 在已有 `sys` 快照上结束单个 PID，供批量调用复用同一次进程刷新。
+fn kill_by_pid_in(sys: &sysinfo::System, pid: u32) -> KillResult {
     let target = sysinfo::Pid::from_u32(pid);
     match sys.process(target) {
         None => KillResult::NotFound,
         Some(proc_) => {
             let name = proc_.name().to_string_lossy().to_ascii_lowercase();
             let stripped = name.strip_suffix(".exe").unwrap_or(&name);
-            if is_protected(stripped, target, &sys) {
+            if is_protected(stripped, target, sys) {
                 return KillResult::Protected;
             }
             if proc_.kill() {
@@ -241,6 +238,17 @@ pub fn kill_by_pid(pid: u32) -> KillResult {
             }
         }
     }
+}
+
+/// 批量精确结束多个 PID，只刷新一次系统进程表（避免逐个 kill 时重复全量刷新）。
+/// 返回的 `Vec` 与输入 `pids` 一一对应。
+pub fn kill_by_pids(pids: &[u32]) -> Vec<KillResult> {
+    if pids.is_empty() {
+        return Vec::new();
+    }
+    let mut sys = sysinfo::System::new();
+    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+    pids.iter().map(|&pid| kill_by_pid_in(&sys, pid)).collect()
 }
 
 // ---------------- WebView2 进程回收（轻量模式用） ----------------

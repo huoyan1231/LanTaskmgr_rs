@@ -489,34 +489,32 @@ async fn handler(
         if target.is_empty() || target.len() > 256 {
             return (text_plain(), "fail".to_string()).into_response();
         }
-        let mut protected = false;
-        let mut any_ok = false;
-        let mut any_failed = false;
+        // 先解析全部 PID，非法直接拒绝；解析后一次性刷新进程表批量结束（复用 System）
+        let mut pids: Vec<u32> = Vec::new();
         for part in target.split(',') {
             let part = part.trim();
             if part.is_empty() {
                 continue;
             }
-            let pid = match part.parse::<u32>() {
-                Ok(p) => p,
+            match part.parse::<u32>() {
+                Ok(p) => pids.push(p),
                 Err(_) => {
                     return (text_plain(), "fail".to_string()).into_response();
                 }
-            };
-            crate::logger::log(format!("结束进程：{ip} pid={pid}"));
-            match process::kill_by_pid(pid) {
-                process::KillResult::Ok => {
-                    any_ok = true;
-                }
-                process::KillResult::Partial => {
-                    any_failed = true;
-                }
-                process::KillResult::NotFound => {
-                    // 该 PID 不存在：不单独处理，循环结束后统一判定
-                }
-                process::KillResult::Protected => {
-                    protected = true;
-                }
+            }
+        }
+        let results = process::kill_by_pids(&pids);
+        let mut protected = false;
+        let mut any_ok = false;
+        let mut any_failed = false;
+        for (pid, r) in pids.iter().zip(results.iter()) {
+            crate::logger::log(format!("结束进程：{ip} pid={pid} -> {r:?}"));
+            match r {
+                process::KillResult::Ok => any_ok = true,
+                process::KillResult::Partial => any_failed = true,
+                // NotFound：该 PID 不存在，循环结束后统一判定
+                process::KillResult::NotFound => {}
+                process::KillResult::Protected => protected = true,
             }
         }
         if protected {
@@ -525,7 +523,7 @@ async fn handler(
                 text_plain(),
                 "protected".to_string(),
             )
-                .into_response();
+            .into_response();
         }
         if any_ok && !any_failed {
             return with_security_headers((text_plain(), "ok".to_string())).into_response();
@@ -539,7 +537,7 @@ async fn handler(
             text_plain(),
             "gone".to_string(),
         )
-            .into_response();
+        .into_response();
     }
 
     if rawurl.ends_with("/list") {
