@@ -420,7 +420,6 @@ async fn handler(
             return (text_plain(), "fail".to_string()).into_response();
         }
         let mut protected = false;
-        let mut not_found = false;
         let mut any_ok = false;
         let mut any_failed = false;
         for part in target.split(',') {
@@ -443,7 +442,7 @@ async fn handler(
                     any_failed = true;
                 }
                 process::KillResult::NotFound => {
-                    not_found = true;
+                    // 该 PID 不存在：不单独处理，循环结束后统一判定
                 }
                 process::KillResult::Protected => {
                     protected = true;

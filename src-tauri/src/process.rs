@@ -212,45 +212,6 @@ fn is_protected(stripped: &str, pid: sysinfo::Pid, sys: &sysinfo::System) -> boo
     false
 }
 
-/// 结束与给定名字相同的所有进程（去掉 .exe 后缀，与原程序 Process.GetProcessesByName 对齐）。
-pub fn kill_by_name(name: &str) -> KillResult {
-    let target = name.to_ascii_lowercase();
-    let target = target.strip_suffix(".exe").unwrap_or(&target);
-
-    let mut sys = sysinfo::System::new();
-    sys.refresh_processes(sysinfo::ProcessesToUpdate::All, true);
-
-    let mut found = false;
-    let mut failed = false;
-    let mut protected = false;
-    for (pid, proc_) in sys.processes() {
-        let pname = proc_.name().to_string_lossy().to_string();
-        let pname = pname.to_ascii_lowercase();
-        let pname = pname.strip_suffix(".exe").unwrap_or(&pname);
-        if pname == target {
-            found = true;
-            if is_protected(&pname, *pid, &sys) {
-                protected = true;
-                continue;
-            }
-            if !proc_.kill() {
-                failed = true;
-            }
-        }
-    }
-    if !found {
-        return KillResult::NotFound;
-    }
-    if protected {
-        return KillResult::Protected;
-    }
-    if failed {
-        KillResult::Partial
-    } else {
-        KillResult::Ok
-    }
-}
-
 /// 精确结束指定 PID 的单个进程（防误杀：不会牵连同名其它实例）。
 pub fn kill_by_pid(pid: u32) -> KillResult {
     let mut sys = sysinfo::System::new();
