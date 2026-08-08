@@ -50,6 +50,7 @@
       killedProtected: 'Protected \u2014 refused',
       killedGone: 'Already gone',
       killedDenied: 'Access denied',
+      noPasswordWarn: 'No password is set \u2014 anyone on your network can control this PC. Set one in the PC app.',
       offline: 'Connection lost \u2014 retrying\u2026'
     },
     CN: {
@@ -86,6 +87,7 @@
       killedProtected: '受保护进程，已拒绝',
       killedGone: '进程已不存在',
       killedDenied: '权限不足',
+      noPasswordWarn: '当前未设置密码，局域网内任何人都能控制这台电脑。请在电脑端设置密码。',
       offline: '连接已断开，正在重试\u2026'
     },
     ZHTW: {
@@ -122,6 +124,7 @@
       killedProtected: '受保護的處理程序，已拒絕',
       killedGone: '處理程序已不存在',
       killedDenied: '權限不足',
+      noPasswordWarn: '目前未設定密碼，區域網路內任何人都能控制這台電腦。請在電腦端設定密碼。',
       offline: '連線中斷，正在重試\u2026'
     }
   };
@@ -236,7 +239,14 @@
       msg.textContent = '';
 
       post('/dologin', pw.value, function (status, text) {
-        if (status === 200 && text === 'ok') {
+        if (status === 200 && (text === 'ok' || text === 'warning')) {
+          if (text === 'warning') {
+            /* 服务端未设置密码，放行但提醒用户去 PC 端设密码 */
+            try { localStorage.setItem('ltm_nowarn', '1'); } catch (e) {}
+            setTimeout(function () {
+              alert(t('noPasswordWarn'));
+            }, 200);
+          }
           location.replace('/');
           return;
         }
@@ -276,7 +286,7 @@
     var timer = null;
     var inFlight = false;
     var misses = 0;
-    var selected = null;
+    var selected = null;   /* 选中的进程 PID（number） */
     var toastTimer = null;
 
     try {
@@ -369,7 +379,7 @@
       var r = { el: el, name: nameText, tag: tag, cnt: cnt,
                 sub: sub, mem: mem, cpu: cpu, cache: {} };
 
-      el.onclick = function () { openSheet(d.n); };
+      el.onclick = function () { openSheet(d.pid); };
       return r;
     }
 
@@ -429,13 +439,13 @@
 
       for (i = 0; i < items.length; i++) {
         var d = items[i];
-        var r = rows[d.n];
+        var r = rows[d.pid];
         if (!r) {
           r = makeRow(d);
-          rows[d.n] = r;
+          rows[d.pid] = r;
         }
         paint(r, d);
-        seen[d.n] = 1;
+        seen[d.pid] = 1;
 
         /* Move into place only if it is not already there. */
         var at = listEl.childNodes[i];
@@ -452,9 +462,9 @@
       }
     }
 
-    function find(name) {
+    function find(pid) {
       for (var i = 0; i < data.length; i++) {
-        if (data[i].n === name) { return data[i]; }
+        if (data[i].pid === pid) { return data[i]; }
       }
       return null;
     }
@@ -523,7 +533,7 @@
     function refreshSheet() {
       var d = find(selected);
       if (!d) { closeSheet(); return; }
-      sheetName.textContent = d.n;
+      sheetName.textContent = d.n + '  (PID ' + d.pid + ')';
       sheetTitle.textContent = d.t || '';
       sheetTitle.hidden = !d.t;
       sheetMem.textContent = bytes(d.m);
@@ -544,8 +554,8 @@
       }
     }
 
-    function openSheet(name) {
-      selected = name;
+    function openSheet(pid) {
+      selected = pid;
       sheetKill.textContent = t('endTask');
       refreshSheet();
       if (selected) { sheet.hidden = false; }
@@ -563,18 +573,21 @@
 
     sheetKill.onclick = function () {
       if (!selected) { return; }
-      var name = selected;
+      var pid = selected;
+      // 记录进程名用于在提示里展示（kill 接口只接受 PID，避免误杀同名进程）
+      var info = find(pid);
+      var label = info ? info.n : ('PID ' + pid);
       sheetKill.disabled = true;
       sheetKill.textContent = t('ending');
 
-      post('/kill', name, function (status, text) {
+      post('/kill', String(pid), function (status, text) {
         closeSheet();
         sheetKill.textContent = t('endTask');
 
         if (status === 200 && text === 'ok') {
-          toast(t('killedOk', { name: name }));
+          toast(t('killedOk', { name: label }));
         } else if (status === 200 && text === 'partial') {
-          toast(t('killedPartial', { name: name }), true);
+          toast(t('killedPartial', { name: label }), true);
         } else if (status === 404) {
           toast(t('killedGone'), true);
         } else if (status === 403 && text === 'protected') {
