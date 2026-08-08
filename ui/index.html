@@ -303,7 +303,7 @@
                 <div class="addr" id="addr"></div>
                 <button class="copybtn" id="copyBtn">复制</button>
             </div>
-            <img class="qr" id="qr" alt="QR">
+            <div class="qr" id="qr"></div>
             <div class="hint" id="favor"></div>
             <div class="hint" id="fwHint"></div>
         </div>
@@ -416,7 +416,9 @@
             document.getElementById("favor").textContent = snap.messages.add_favor;
             document.getElementById("fwHint").textContent = snap.messages.firewall_hint;
             document.getElementById("copyBtn").textContent = snap.messages.copy;
-            document.getElementById("qr").src = "data:image/svg+xml;utf8," + encodeURIComponent(snap.qr);
+            // 用 innerHTML 直接嵌入 SVG（data URI 在部分 WebView2 版本中显示为破损图片）
+            const qrEl = document.getElementById("qr");
+            qrEl.innerHTML = snap.qr;
 
             // 其他网卡地址
             const alt = document.getElementById("altList");
