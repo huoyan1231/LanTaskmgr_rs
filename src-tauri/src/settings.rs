@@ -4,6 +4,9 @@
 //! 这里改存到「应用数据目录」，对安装到 Program Files 的程序更合适，也避免写 exe 目录没权限。
 
 use crate::i18n;
+use argon2::password_hash::rand_core::OsRng;
+use argon2::password_hash::{PasswordHasher, SaltString};
+use argon2::Argon2;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -127,4 +130,27 @@ pub fn save(s: &Settings) {
 #[allow(dead_code)]
 pub fn random_password() -> String {
     default_password()
+}
+
+/// 把明文密码哈希成可存储的字符串（salt 内嵌在结果里）。
+/// 空串表示「未设置密码」，调用方应直接存空串、不要哈希。
+pub fn hash_password(plain: &str) -> String {
+    let salt = SaltString::generate(&mut OsRng);
+    let argon2 = Argon2::default();
+    match argon2.hash_password(plain.as_bytes(), &salt) {
+        Ok(h) => h.to_string(),
+        // 理论上不会失败；兜底返回不可登录的占位串（verify 必失败）
+        Err(_) => "$argon2id$v=19$m=19456,t=2,p=1$$error".to_string(),
+    }
+}
+
+/// 恒定时间校验明文密码与存储哈希是否匹配（防止计时侧信道）。
+pub fn verify_password(stored_hash: &str, plain: &str) -> bool {
+    use argon2::password_hash::PasswordVerifier;
+    let Ok(parsed) = argon2::password_hash::PasswordHash::new(stored_hash) else {
+        return false;
+    };
+    Argon2::default()
+        .verify_password(plain.as_bytes(), &parsed)
+        .is_ok()
 }
