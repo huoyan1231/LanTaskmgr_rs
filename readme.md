@@ -1,3 +1,5 @@
+[English](./readme_en.md) | 简体中文
+
 # LanTaskmgr_rs
 
 [C版本](https://github.com/huoyan1231/LanTaskmgr)
