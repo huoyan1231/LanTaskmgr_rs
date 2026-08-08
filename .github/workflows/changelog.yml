@@ -1,0 +1,67 @@
+name: Generate Changelog
+
+# 在推送形如 v1.0.0 的 tag 时，自动根据从上一个 tag 到当前 tag 的提交
+# 生成 CHANGELOG（遵循 Conventional Commits 规范），并把变更内容更新到
+# 同名 Release 的 body 中（追加「更新日志」小节，不覆盖原有说明）。
+#
+# 与 release-portable.yml 解耦：本 workflow 只负责「生成 changelog 并写回 Release」，
+# 不编译、不打包、不重新上传产物。
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Target tag, e.g. v1.0.0 (required for manual runs)'
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # 需要完整历史以计算 tag 间差异
+
+      - name: Resolve tag
+        id: meta
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Generate changelog from commits
+        id: changelog
+        uses: TriPSs/conventional-changelog-action@v5
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          version-file: ''
+          tag-prefix: 'v'
+          output-file: 'CHANGELOG_release.md'
+          release-count: 0        # 仅生成本 tag 相对上一个 tag 的变更
+          skip-version-file: true
+          skip-tag: true          # tag 已由 push 触发，不要重复打 tag
+          skip-commit: true       # 不要自动提交 changelog 文件
+        continue-on-error: true   # 首个 tag（无上一个 tag）时也能继续
+
+      - name: Update Release body with changelog
+        if: ${{ steps.changelog.outputs.clean_changelog != '' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          body: |
+            ${{ steps.changelog.outputs.clean_changelog }}
+          append_body: true
+          overwrite: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
