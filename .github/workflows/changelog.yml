@@ -27,9 +27,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # 需要完整历史以计算 tag 间差异
+          fetch-depth: 0
 
-      - name: Resolve tag
+      - name: Resolve tag & generate changelog
         id: meta
         shell: bash
         run: |
@@ -40,27 +40,55 @@ jobs:
           fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
-      - name: Generate changelog from commits
-        id: changelog
-        uses: TriPSs/conventional-changelog-action@v5
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          version-file: ''
-          tag-prefix: 'v'
-          output-file: 'CHANGELOG_release.md'
-          release-count: 0        # 仅生成本 tag 相对上一个 tag 的变更
-          skip-version-file: true
-          skip-tag: true          # tag 已由 push 触发，不要重复打 tag
-          skip-commit: true       # 不要自动提交 changelog 文件
-        continue-on-error: true   # 首个 tag（无上一个 tag）时也能继续
+          # 找到上一个 v* tag（排除当前 tag）
+          PREV=$(git tag --sort=-v:refname --list 'v*' | grep -v "^${TAG}$" | head -1)
+
+          if [ -n "$PREV" ]; then
+            echo "prev_tag=${PREV}" >> "$GITHUB_OUTPUT"
+            # 用 git log 生成从上个 tag 到当前 tag 的提交列表
+            BODY=$(git log ${PREV}..${TAG} --pretty=format:"- %s (%h)" --no-merges)
+            # 按类型分组显示
+            FEATS=$(git log ${PREV}..${TAG} --pretty=format:"- %s" --grep="^feat" --no-merges)
+            FIXES=$(git log ${PREV}..${TAG} --pretty=format:"- %s" --grep="^fix" --no-merges)
+            PERFS=$(git log ${PREV}..${TAG} --pretty=format:"- %s" --grep="^perf" --no-merges)
+            REFACTORS=$(git log ${PREV}..${TAG} --pretty=format:"- %s" --grep="^refactor" --no-merges)
+            SECS=$(git log ${PREV}..${TAG} --pretty=format:"- %s" --grep="^security" --no-merges)
+            CIS=$(git log ${PREV}..${TAG} --pretty=format:"- %s" --grep="^ci" --no-merges)
+            OTHERS=$(git log ${PREV}..${TAG} --pretty=format:"- %s" --no-merges \
+              | grep -vE "^(feat|fix|perf|refactor|security|ci):" || true)
+
+            {
+              echo "### What's Changed"
+              echo ""
+              if [ -n "$FEATS" ]; then echo "**Features**"; echo "$FEATS"; echo ""; fi
+              if [ -n "$FIXES" ]; then echo "**Bug Fixes**"; echo "$FIXES"; echo ""; fi
+              if [ -n "$PERFS" ]; then echo "**Performance**"; echo "$PERFS"; echo ""; fi
+              if [ -n "$REFACTORS" ]; then echo "**Refactoring**"; echo "$REFACTORS"; echo ""; fi
+              if [ -n "$SECS" ]; then echo "**Security**"; echo "$SECS"; echo ""; fi
+              if [ -n "$CIS" ]; then echo "**CI / Build**"; echo "$CIS"; echo ""; fi
+              if [ -n "$OTHERS" ]; then echo "**Other Changes**"; echo "$OTHERS"; echo ""; fi
+            } | tee /tmp/changelog.txt
+
+            # 写入 output（多行内容需要特殊处理）
+            {
+              echo "changelog<<EOF"
+              cat /tmp/changelog.txt
+              echo "EOF"
+            } >> "$GITHUB_OUTPUT"
+          else
+            echo "prev_tag=" >> "$GITHUB_OUTPUT"
+            echo "changelog=First release." >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Update Release body with changelog
-        if: ${{ steps.changelog.outputs.clean_changelog != '' }}
+        if: ${{ steps.meta.outputs.prev_tag != '' }}
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.meta.outputs.tag }}
           body: |
-            ${{ steps.changelog.outputs.clean_changelog }}
+            ## Changelog
+
+            ${{ steps.meta.outputs.changelog }}
           append_body: true
           overwrite: true
         env:
