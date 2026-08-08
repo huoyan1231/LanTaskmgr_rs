@@ -96,19 +96,21 @@ pub fn on_window_destroyed(app: &AppHandle) {
 
         sleep(Duration::from_millis(GRACE_MS)).await;
 
+        // 子孙树在窗口已销毁后基本不变，整轮清理只算一次，复扫直接复用
+        let mut reaper = crate::process::prepare_webview_reaper();
         let mut total = 0usize;
         for round in 0..SWEEP_ROUNDS {
             // 程序要退出了，或窗口已被重新打开 —— 立刻停手，别误杀新 WebView
             if is_exiting() || app.get_webview_window("main").is_some() {
                 break;
             }
-            total += crate::process::kill_own_webview_processes();
+            total += reaper.kill_round();
             if round + 1 < SWEEP_ROUNDS {
                 sleep(Duration::from_millis(SWEEP_INTERVAL_MS)).await;
             }
         }
 
-        let left = crate::process::count_own_webview_processes();
+        let left = reaper.count_remaining();
         crate::logger::log(format!(
             "轻量模式：窗口已关闭，结束 {total} 个 WebView2 进程，残留 {left} 个。"
         ));

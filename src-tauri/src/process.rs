@@ -312,31 +312,58 @@ fn snapshot() -> sysinfo::System {
     sys
 }
 
+/// 一次 WebView2 清理所需的「快照 + 本进程子孙树」。
+///
+/// 子孙树在窗口已销毁后基本不变，因此**只算一次**即可供多轮复扫复用，
+/// 避免轻量模式每轮都重新遍历全部进程建父子树（实测 4 轮复扫会重复建 4 次）。
+pub struct WebviewReaper {
+    sys: sysinfo::System,
+    descendants: std::collections::HashSet<sysinfo::Pid>,
+}
+
+/// 构造清理器：拍一次进程快照并算好本进程子孙树（仅需一次）。
+pub fn prepare_webview_reaper() -> WebviewReaper {
+    let sys = snapshot();
+    let descendants = own_descendants(&sys);
+    WebviewReaper { sys, descendants }
+}
+
+impl WebviewReaper {
+    /// 复扫一轮：刷新进程状态后用已算好的子孙树判定并结束本程序的 WebView2 进程。
+    /// 返回本轮结束掉的进程个数。
+    pub fn kill_round(&mut self) -> usize {
+        self.sys
+            .refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+        let mut killed = 0usize;
+        for (pid, proc_) in self.sys.processes() {
+            if is_our_webview(proc_, &self.descendants, *pid) && proc_.kill() {
+                killed += 1;
+            }
+        }
+        killed
+    }
+
+    /// 还剩多少个属于本程序的 `msedgewebview2` 进程（用于日志 / 判断是否清干净）。
+    pub fn count_remaining(&mut self) -> usize {
+        self.sys
+            .refresh_processes(sysinfo::ProcessesToUpdate::All, true);
+        self.sys
+            .processes()
+            .iter()
+            .filter(|(pid, proc_)| is_our_webview(proc_, &self.descendants, **pid))
+            .count()
+    }
+}
+
 /// 结束所有属于本程序的 `msedgewebview2` 进程，返回结束掉的个数。
 ///
 /// 轻量模式关窗后要立刻把 WebView2 占的内存还回去 —— 实测 Tauri / wry 走正常释放路径时
 /// 这些子进程不会马上退出，所以由我们主动清理。
+///
+/// 单次调用场景（如启动清理）用此便捷函数即可；需要多轮复扫时请用
+/// `prepare_webview_reaper()` + `WebviewReaper::kill_round` 复用子孙树。
 pub fn kill_own_webview_processes() -> usize {
-    let sys = snapshot();
-    let descendants = own_descendants(&sys);
-
-    let mut killed = 0usize;
-    for (pid, proc_) in sys.processes() {
-        if is_our_webview(proc_, &descendants, *pid) && proc_.kill() {
-            killed += 1;
-        }
-    }
-    killed
-}
-
-/// 还剩多少个属于本程序的 `msedgewebview2` 进程（用于日志 / 判断是否清干净）。
-pub fn count_own_webview_processes() -> usize {
-    let sys = snapshot();
-    let descendants = own_descendants(&sys);
-    sys.processes()
-        .iter()
-        .filter(|(pid, proc_)| is_our_webview(proc_, &descendants, **pid))
-        .count()
+    prepare_webview_reaper().kill_round()
 }
 
 // ---------------- Windows 窗口标题枚举 ----------------
