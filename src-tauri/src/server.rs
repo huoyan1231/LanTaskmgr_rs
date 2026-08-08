@@ -33,6 +33,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const AUTH_TIMEOUT_SECS: u64 = 10 * 60;
+/// devices map 的容量上限：正常局域网内活跃 IP 不会这么多；
+/// 超过后惰性清理过期且未封禁的条目，避免 map 无限增长。
+const MAX_DEVICES: usize = 1024;
 const MAX_WRONG: u32 = 3;
 const TOKEN_BYTES: usize = 32;
 const TOKEN_MAX_AGE: u64 = AUTH_TIMEOUT_SECS;
@@ -106,6 +109,24 @@ impl ServerState {
         let mut map = self.devices.lock().unwrap();
         // 先确保存在
         if !map.contains_key(ip) {
+                // 容量保护：超过上限时，惰性清理「已超时且未被封禁」的旧条目，
+                // 防止 DHCP 频繁换 IP 导致 map 无限增长。封禁条目一律保留。
+                if map.len() >= MAX_DEVICES {
+                    map.retain(|_, d| {
+                        d.blocked || d.last_visit.elapsed() < Duration::from_secs(AUTH_TIMEOUT_SECS)
+                    });
+                // 清理后仍超限（说明大量真正活跃/封禁的 IP），强制腾出一个最旧的
+                if map.len() >= MAX_DEVICES {
+                    if let Some(oldest) = map
+                        .iter()
+                        .filter(|(_, d)| !d.blocked)
+                        .min_by_key(|(_, d)| d.last_visit)
+                        .map(|(k, _)| k.clone())
+                    {
+                        map.remove(&oldest);
+                    }
+                }
+            }
             map.insert(ip.to_string(), Device::new());
         }
         map
