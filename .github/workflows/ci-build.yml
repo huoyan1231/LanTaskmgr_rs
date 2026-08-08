@@ -1,0 +1,52 @@
+name: CI Build
+
+# 仅做「构建可行性验证」：在 push / PR 时编译，并把构建产物（exe）作为 artifact
+# 上传，便于下载检查。本 workflow 不创建 Release、不发布任何包。
+
+on:
+  push:
+    branches:
+      - '**'
+    tags-ignore:
+      - 'v*'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain (MSVC)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: './src-tauri -> target'
+
+      - name: Build release binary
+        working-directory: ./src-tauri
+        run: cargo build --release
+
+      - name: Rename binary for artifact
+        shell: pwsh
+        run: |
+          $exe = "src-tauri/target/release/lantaskmgr_rs.exe"
+          New-Item -ItemType Directory -Force -Path artifact | Out-Null
+          Copy-Item $exe -Destination "artifact/LanTaskmgr_rs.exe"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: LanTaskmgr_rs-build-${{ github.sha }}
+          path: artifact/LanTaskmgr_rs.exe
+          if-no-files-found: error
+          retention-days: 7
