@@ -249,13 +249,23 @@ fn restart_service() {
 fn open_external(url: String) {
     #[cfg(windows)]
     {
-        use std::process::Command;
-        // 用系统默认程序打开（通常是浏览器）
-        if let Err(e) = Command::new("cmd")
-            .args(["/c", "start", "", &url])
-            .spawn()
-        {
-            logger::log(format!("打开外部链接失败 {url}: {e}"));
+        use windows::Win32::UI::Shell::ShellExecuteW;
+        use windows::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+        use windows::core::PCWSTR;
+
+        // 用系统默认程序打开（通常是浏览器）。直接走 ShellExecute，避免 `cmd /c start`
+        // 对含特殊字符/引号的 URL 产生歧义或注入风险。
+        let url_w: Vec<u16> = url.encode_utf16().chain(std::iter::once(0)).collect();
+        let open_w: Vec<u16> = "open".encode_utf16().chain(std::iter::once(0)).collect();
+        unsafe {
+            let _ = ShellExecuteW(
+                None,
+                PCWSTR::from_raw(open_w.as_ptr()),
+                PCWSTR::from_raw(url_w.as_ptr()),
+                None,
+                None,
+                SW_SHOWNORMAL,
+            );
         }
     }
     #[cfg(not(windows))]
