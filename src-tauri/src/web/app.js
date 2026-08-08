@@ -4,9 +4,6 @@
  * Deliberately ES5 + XMLHttpRequest: this is served to whatever phone happens
  * to be on the LAN, including old Android WebViews, and it must run without a
  * single byte from the internet. No frameworks, no polyfills, no build step.
- *
- * The server injects the current UI language by replacing the WEBLANGUAGE
- * token below with EN / CN / ZHTW (matching the PC side).
  */
 (function () {
   'use strict';
@@ -50,8 +47,10 @@
       killedProtected: 'Protected \u2014 refused',
       killedGone: 'Already gone',
       killedDenied: 'Access denied',
-      noPasswordWarn: 'No password is set \u2014 anyone on your network can control this PC. Set one in the PC app.',
-      offline: 'Connection lost \u2014 retrying\u2026'
+      offline: 'Connection lost \u2014 retrying\u2026',
+      noTitle: 'no title',
+      showInstances: 'Instances ({n})',
+      noPasswordWarn: 'No password is set \u2014 anyone on your network can control this PC. Set one in the PC app.'
     },
     CN: {
       title: '局域网任务管理器',
@@ -87,10 +86,12 @@
       killedProtected: '受保护进程，已拒绝',
       killedGone: '进程已不存在',
       killedDenied: '权限不足',
-      noPasswordWarn: '当前未设置密码，局域网内任何人都能控制这台电脑。请在电脑端设置密码。',
-      offline: '连接已断开，正在重试\u2026'
+      offline: '连接已断开，正在重试\u2026',
+      noTitle: '无标题',
+      showInstances: '各实例（{n}）',
+      noPasswordWarn: '当前未设置密码，局域网内任何人都能控制这台电脑。请在电脑端设置密码。'
     },
-    ZHTW: {
+    TW: {
       title: '區域網路工作管理員',
       loginSub: '登入以管理這台電腦',
       enterPw: '密碼',
@@ -124,12 +125,14 @@
       killedProtected: '受保護的處理程序，已拒絕',
       killedGone: '處理程序已不存在',
       killedDenied: '權限不足',
-      noPasswordWarn: '目前未設定密碼，區域網路內任何人都能控制這台電腦。請在電腦端設定密碼。',
-      offline: '連線中斷，正在重試\u2026'
+      offline: '連線中斷，正在重試\u2026',
+      noTitle: '無標題',
+      showInstances: '各執行個體（{n}）',
+      noPasswordWarn: '目前未設定密碼，區域網路內任何人都能控制這台電腦。請在電腦端設定密碼。'
     }
   };
 
-  var HTML_LANG = { EN: 'en', CN: 'zh-CN', ZHTW: 'zh-TW' };
+  var HTML_LANG = { EN: 'en', CN: 'zh-CN', TW: 'zh-TW' };
 
   function cookie(name) {
     var parts = document.cookie ? document.cookie.split(';') : [];
@@ -141,13 +144,12 @@
     return '';
   }
 
-  /* The PC tells us the language via the WEBLANGUAGE token during serving. */
-  var lang = "WEBLANGUAGE";
+  var lang = cookie('ltm_lang');
   if (!STR[lang]) {
-    /* Fallback: use whatever the phone prefers. */
+    /* The PC did not tell us; fall back to whatever the phone prefers. */
     var nav = (navigator.language || 'en').toLowerCase();
     lang = nav.indexOf('zh') !== 0 ? 'EN'
-         : (nav.indexOf('tw') > 0 || nav.indexOf('hk') > 0 || nav.indexOf('hant') > 0) ? 'ZHTW'
+         : (nav.indexOf('tw') > 0 || nav.indexOf('hk') > 0 || nav.indexOf('hant') > 0) ? 'TW'
          : 'CN';
   }
   var T = STR[lang];
@@ -286,7 +288,7 @@
     var timer = null;
     var inFlight = false;
     var misses = 0;
-    var selected = null;   /* 选中的进程 PID（number） */
+    var selected = null;
     var toastTimer = null;
 
     try {
@@ -379,7 +381,7 @@
       var r = { el: el, name: nameText, tag: tag, cnt: cnt,
                 sub: sub, mem: mem, cpu: cpu, cache: {} };
 
-      el.onclick = function () { openSheet(d.pid); };
+      el.onclick = function () { openSheet(d); };
       return r;
     }
 
@@ -439,13 +441,13 @@
 
       for (i = 0; i < items.length; i++) {
         var d = items[i];
-        var r = rows[d.pid];
+        var r = rows[d.n];
         if (!r) {
           r = makeRow(d);
-          rows[d.pid] = r;
+          rows[d.n] = r;
         }
         paint(r, d);
-        seen[d.pid] = 1;
+        seen[d.n] = 1;
 
         /* Move into place only if it is not already there. */
         var at = listEl.childNodes[i];
@@ -462,9 +464,9 @@
       }
     }
 
-    function find(pid) {
+    function find(name) {
       for (var i = 0; i < data.length; i++) {
-        if (data[i].pid === pid) { return data[i]; }
+        if (data[i].n === name) { return data[i]; }
       }
       return null;
     }
@@ -527,18 +529,66 @@
     var sheetCpu = document.getElementById('sheetCpu');
     var sheetCount = document.getElementById('sheetCount');
     var sheetWarn = document.getElementById('sheetWarn');
+    var sheetPins = document.getElementById('sheetPins');
+    var sheetPinsToggle = document.getElementById('sheetPinsToggle');
+    var sheetPinsToggleText = document.getElementById('sheetPinsToggleText');
     var sheetKill = document.getElementById('sheetKill');
     var sheetCancel = document.getElementById('sheetCancel');
+    var pinsOpen = false;
 
     function refreshSheet() {
       var d = find(selected);
+      var i, pin, li, label, pidSpan, btn, n;
+
       if (!d) { closeSheet(); return; }
-      sheetName.textContent = d.n + '  (PID ' + d.pid + ')';
+      sheetName.textContent = d.n;
       sheetTitle.textContent = d.t || '';
       sheetTitle.hidden = !d.t;
       sheetMem.textContent = bytes(d.m);
       sheetCpu.textContent = pct(d.p);
       sheetCount.textContent = String(d.i);
+
+      /* The PID list is collapsed by default: an aggregated card stays compact
+       * until the user asks to see the individual instances behind it. */
+      n = d.pins ? d.pins.length : 0;
+      sheetPinsToggle.hidden = n === 0;
+      sheetPinsToggleText.textContent = t('showInstances', { n: n });
+      sheetPinsToggle.setAttribute('aria-expanded', pinsOpen ? 'true' : 'false');
+      if (pinsOpen) { sheetPinsToggle.classList.add('is-open'); }
+      else { sheetPinsToggle.classList.remove('is-open'); }
+      sheetPins.hidden = !pinsOpen || n === 0;
+
+      /* Build the per-instance PID list: each row ends exactly one process. */
+      sheetPins.textContent = '';
+      for (i = 0; pinsOpen && i < n; i++) {
+        pin = d.pins[i];
+        li = document.createElement('li');
+        li.className = 'pin';
+
+        label = document.createElement('span');
+        label.className = 'pin-label';
+        label.textContent = pin.t || t('noTitle');
+        li.appendChild(label);
+
+        pidSpan = document.createElement('span');
+        pidSpan.className = 'pin-pid';
+        pidSpan.textContent = 'PID ' + pin.p;
+        li.appendChild(pidSpan);
+
+        btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'pin-kill';
+        btn.textContent = t('endTask');
+        btn.onclick = (function (pid, self) {
+          return function () {
+            killOne(d, pid, self);
+          };
+        })(pin.p, btn);
+        if (d.k) { btn.disabled = true; }
+        li.appendChild(btn);
+
+        sheetPins.appendChild(li);
+      }
 
       if (d.k) {
         sheetWarn.textContent = t('protectedWarn');
@@ -554,8 +604,39 @@
       }
     }
 
-    function openSheet(pid) {
-      selected = pid;
+    /* Ends a single process by PID. */
+    function killOne(d, pid, btn) {
+      var name = d.n;
+      if (btn) { btn.disabled = true; btn.textContent = t('ending'); }
+
+      post('/kill', String(pid), function (status, text) {
+        if (status === 401) { location.replace('/'); return; }
+        if (btn) { btn.textContent = t('endTask'); }
+
+        if (status === 200 && (text === 'ok' || text === 'partial')) {
+          toast(t('killedOk', { name: name }));
+        } else if (status === 403 && text === 'protected') {
+          toast(t('killedProtected'), true);
+        } else if (status === 404) {
+          toast(t('killedGone'), true);
+        } else if (status === 0) {
+          toast(t('netErr'), true);
+        } else {
+          toast(t('killedDenied'), true);
+          if (btn) { btn.disabled = false; }
+        }
+        schedule(150);
+      });
+    }
+
+    sheetPinsToggle.onclick = function () {
+      pinsOpen = !pinsOpen;
+      refreshSheet();
+    };
+
+    function openSheet(d) {
+      selected = d.n;
+      pinsOpen = false;   /* always start collapsed */
       sheetKill.textContent = t('endTask');
       refreshSheet();
       if (selected) { sheet.hidden = false; }
@@ -572,22 +653,21 @@
     sheetCancel.onclick = closeSheet;
 
     sheetKill.onclick = function () {
-      if (!selected) { return; }
-      var pid = selected;
-      // 记录进程名用于在提示里展示（kill 接口只接受 PID，避免误杀同名进程）
-      var info = find(pid);
-      var label = info ? info.n : ('PID ' + pid);
+      var d = find(selected);
+      if (!d || !d.pins || d.pins.length === 0) { return; }
       sheetKill.disabled = true;
       sheetKill.textContent = t('ending');
 
-      post('/kill', String(pid), function (status, text) {
+      /* Batch kill by PID: end exactly the processes we listed, never by name. */
+      post('/kill', d.pins.map(function (p) { return p.p; }).join(','),
+          function (status, text) {
         closeSheet();
         sheetKill.textContent = t('endTask');
 
         if (status === 200 && text === 'ok') {
-          toast(t('killedOk', { name: label }));
+          toast(t('killedOk', { name: d.n }));
         } else if (status === 200 && text === 'partial') {
-          toast(t('killedPartial', { name: label }), true);
+          toast(t('killedPartial', { name: d.n }), true);
         } else if (status === 404) {
           toast(t('killedGone'), true);
         } else if (status === 403 && text === 'protected') {

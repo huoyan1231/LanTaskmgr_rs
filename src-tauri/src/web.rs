@@ -4,6 +4,6 @@
 //! 占位符在 server.rs 里按当前语言替换成 EN / CN / ZHTW。
 
 pub const LOGIN_HTML: &str = include_str!("web/login.html");
-pub const MANAGER_HTML: &str = include_str!("web/manager.html");
+pub const MANAGER_HTML: &str = include_str!("web/index.html");
 pub const APP_CSS: &str = include_str!("web/app.css");
 pub const APP_JS: &str = include_str!("web/app.js");
